@@ -10,27 +10,26 @@ let tilesetOriginWgs84 = null;
  * Returns a promise that resolves when the root tile is loaded
  */
 export async function loadTileset(url, scene, camera) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     console.log('Loading tileset from:', url);
+    
+    // Fetch tileset.json directly to get the transform
+    try {
+      const response = await fetch(url);
+      const tilesetJson = await response.json();
+      
+      if (tilesetJson.root && tilesetJson.root.transform) {
+        tilesetOriginWgs84 = getTilesetOriginFromTransform(tilesetJson.root.transform);
+        console.log('Tileset origin (WGS84):', tilesetOriginWgs84);
+      }
+    } catch (e) {
+      console.warn('Could not fetch tileset.json directly:', e);
+    }
     
     tilesRenderer = new TilesRenderer(url);
     
     tilesRenderer.setCamera(camera);
     tilesRenderer.setResolutionFromRenderer(camera, window.renderer);
-    
-    // Called when root tileset.json is loaded
-    tilesRenderer.addEventListener('load-tile-set', (event) => {
-      console.log('Tileset JSON loaded');
-      
-      // Extract the geospatial origin from the root transform
-      const root = tilesRenderer.root;
-      if (root && root.transform) {
-        // The transform is a THREE.Matrix4, get its elements
-        const transformArray = root.transform.elements;
-        tilesetOriginWgs84 = getTilesetOriginFromTransform(transformArray);
-        console.log('Tileset origin (WGS84):', tilesetOriginWgs84);
-      }
-    });
     
     // Called when a tile's content (GLB) is loaded
     tilesRenderer.addEventListener('load-content', (event) => {
