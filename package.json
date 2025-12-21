@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview --host"
+    "preview": "vite preview --host",
+    "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
-    "three": "^0.160.0",
-    "3d-tiles-renderer": "^0.3.34"
+    "3d-tiles-renderer": "^0.3.34",
+    "three": "^0.160.0"
   },
   "devDependencies": {
+    "gh-pages": "^6.3.0",
     "vite": "^5.0.0"
   }
 }

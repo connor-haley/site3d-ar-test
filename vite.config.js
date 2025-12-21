@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: '/site3d-ar-test/',  // Your repo name
   server: {
-    https: true,  // WebXR requires HTTPS
-    host: true,   // Listen on all interfaces (so Quest can connect)
+    https: false,
+    host: true,
     port: 5173
   },
   build: {
