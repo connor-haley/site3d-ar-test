@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -161,43 +162,44 @@
   </style>
   <script type="module" crossorigin src="/site3d-ar-test/assets/index-BU0xXFwb.js"></script>
 </head>
+
 <body>
   <div id="app"></div>
-  
+
   <div id="overlay">
     <h1>Geospatial AR Viewer</h1>
-    
+
     <div class="calibration-form">
       <div class="form-group">
         <label for="tileset-url">Tileset URL</label>
-        <input type="text" id="tileset-url" placeholder="https://your-bucket.s3.amazonaws.com/tileset.json">
+        <input type="text" id="tileset-url" value="https://connor-haley.github.io/site3d-ar-test/tiles/tileset.json">
       </div>
-      
+
       <div class="form-group">
         <label for="calib-lat">Your Latitude</label>
-        <input type="number" id="calib-lat" step="0.0000001" placeholder="37.4419">
+        <input type="number" id="calib-lat" step="0.0000001" value="-23.300">
       </div>
-      
+
       <div class="form-group">
         <label for="calib-lon">Your Longitude</label>
-        <input type="number" id="calib-lon" step="0.0000001" placeholder="-122.1430">
+        <input type="number" id="calib-lon" step="0.0000001" value="117.784">
       </div>
-      
+
       <div class="form-group">
         <label for="calib-alt">Your Altitude (meters)</label>
-        <input type="number" id="calib-alt" step="0.1" placeholder="10.0">
+        <input type="number" id="calib-alt" step="0.1" value="600">
       </div>
-      
+
       <div class="form-group">
         <label for="calib-heading">Heading (degrees from North, clockwise)</label>
         <input type="number" id="calib-heading" step="1" placeholder="0">
       </div>
-      
+
       <button id="enter-ar-btn" disabled>Enter AR</button>
-      
+
       <div id="status">Checking WebXR support...</div>
     </div>
-    
+
     <div class="instructions">
       <h3>Instructions</h3>
       1. Enter your tileset URL<br>
@@ -206,8 +208,9 @@
       4. Tap "Enter AR" and look around
     </div>
   </div>
-  
+
   <div id="ar-status"></div>
-  
+
 </body>
+
 </html>
