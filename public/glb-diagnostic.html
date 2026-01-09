@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLB Loading Diagnostic</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 { margin-bottom: 20px; font-size: 20px; }
+        .test-section {
+            background: #2a2a3e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .test-section h2 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            color: #4a9eff;
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 4px 0;
+            font-size: 13px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .status.pending { background: #444; }
+        .status.success { background: #14532d; }
+        .status.error { background: #7f1d1d; }
+        .status.info { background: #1e3a5f; }
+        button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 8px 4px 8px 0;
+        }
+        button:hover { background: #3a8eef; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        #canvas-container {
+            width: 100%;
+            height: 300px;
+            background: #111;
+            border-radius: 8px;
+            margin-top: 16px;
+            position: relative;
+        }
+        canvas { border-radius: 8px; }
+        .log-container {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #111;
+            border-radius: 4px;
+            padding: 8px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>GLB Loading Diagnostic for Quest 3S</h1>
+
+    <div class="test-section">
+        <h2>1. Environment Check</h2>
+        <div id="env-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. GLB Fetch Tests</h2>
+        <button onclick="testFetch()">Test HTTP Fetch</button>
+        <div id="fetch-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. GLB Format Analysis</h2>
+        <button onclick="analyzeGLB()">Analyze GLB Structure</button>
+        <div id="analysis-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Three.js GLTFLoader Tests</h2>
+        <button onclick="testExternalGLB()">Test External GLB (Duck)</button>
+        <button onclick="testYourGLB()">Test Your model_root.glb</button>
+        <button onclick="testAllYourGLBs()">Test All Your GLBs</button>
+        <div id="loader-results"></div>
+        <div id="canvas-container"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>5. 3DTilesRenderer Test</h2>
+        <button onclick="testTilesRenderer()">Test TilesRenderer</button>
+        <div id="tiles-results"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>6. Console Log</h2>
+        <div class="log-container" id="console-log"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // URLs to test
+        const EXTERNAL_GLB = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Duck/glTF-Binary/Duck.glb';
+        const YOUR_BASE = 'https://connor-haley.github.io/site3d-ar-test/tiles/';
+        const YOUR_GLBS = ['model_root.glb', 'model_0_0.glb', 'model_0_1.glb', 'model_1_0.glb', 'model_1_1.glb', 'model_2_0.glb', 'model_2_1.glb'];
+        const TILESET_URL = YOUR_BASE + 'tileset.json';
+
+        // Store globally for console access
+        window.THREE = THREE;
+        window.GLTFLoader = GLTFLoader;
+
+        // Logging helper
+        const consoleLog = document.getElementById('console-log');
+        function log(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            consoleLog.appendChild(div);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+            console.log(msg);
+        }
+
+        function addResult(containerId, msg, type = 'info') {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = msg;
+            container.appendChild(div);
+        }
+
+        // 1. Environment Check
+        function checkEnvironment() {
+            const container = document.getElementById('env-results');
+            container.innerHTML = '';
+            
+            addResult('env-results', `User Agent: ${navigator.userAgent}`, 'info');
+            addResult('env-results', `WebGL: ${!!document.createElement('canvas').getContext('webgl2') ? 'WebGL2 Supported' : (!!document.createElement('canvas').getContext('webgl') ? 'WebGL1 Only' : 'No WebGL')}`, 'info');
+            
+            // Check WebXR
+            if (navigator.xr) {
+                navigator.xr.isSessionSupported('immersive-ar').then(supported => {
+                    addResult('env-results', `WebXR AR: ${supported ? 'Supported' : 'Not Supported'}`, supported ? 'success' : 'error');
+                });
+            } else {
+                addResult('env-results', 'WebXR: Not Available', 'error');
+            }
+            
+            // Check Three.js version
+            addResult('env-results', `Three.js Version: ${THREE.REVISION}`, 'info');
+        }
+        
+        checkEnvironment();
+
+        // 2. Fetch Tests
+        window.testFetch = async function() {
+            const container = document.getElementById('fetch-results');
+            container.innerHTML = '';
+            
+            // Test tileset.json
+            try {
+                log('Fetching tileset.json...');
+                const resp = await fetch(TILESET_URL);
+                const json = await resp.json();
+                addResult('fetch-results', `✓ tileset.json: ${resp.status} OK, version=${json.asset?.version}`, 'success');
+                log(`Tileset loaded: version=${json.asset?.version}, children=${json.root?.children?.length}`);
+            } catch (e) {
+                addResult('fetch-results', `✗ tileset.json: ${e.message}`, 'error');
+                log(`Tileset fetch failed: ${e.message}`, 'error');
+            }
+            
+            // Test model_root.glb
+            try {
+                log('Fetching model_root.glb headers...');
+                const resp = await fetch(YOUR_BASE + 'model_root.glb', { method: 'HEAD' });
+                const contentType = resp.headers.get('content-type');
+                const contentLength = resp.headers.get('content-length');
+                addResult('fetch-results', `✓ model_root.glb: ${resp.status}, type=${contentType}, size=${(contentLength/1024/1024).toFixed(2)}MB`, 'success');
+            } catch (e) {
+                addResult('fetch-results', `✗ model_root.glb: ${e.message}`, 'error');
+            }
+            
+            // Test external GLB
+            try {
+                log('Fetching external Duck.glb headers...');
+                const resp = await fetch(EXTERNAL_GLB, { method: 'HEAD' });
+                addResult('fetch-results', `✓ External Duck.glb: ${resp.status}`, 'success');
+            } catch (e) {
+                addResult('fetch-results', `✗ External Duck.glb: ${e.message}`, 'error');
+            }
+        };
+
+        // 3. GLB Analysis
+        window.analyzeGLB = async function() {
+            const container = document.getElementById('analysis-results');
+            container.innerHTML = '';
+            
+            try {
+                log('Downloading model_root.glb for analysis...');
+                const resp = await fetch(YOUR_BASE + 'model_root.glb');
+                const buffer = await resp.arrayBuffer();
+                const view = new DataView(buffer);
+                
+                // GLB Header
+                const magic = new TextDecoder().decode(new Uint8Array(buffer, 0, 4));
+                const version = view.getUint32(4, true);
+                const length = view.getUint32(8, true);
+                
+                addResult('analysis-results', `Magic: "${magic}" (should be "glTF")`, magic === 'glTF' ? 'success' : 'error');
+                addResult('analysis-results', `GLB Version: ${version} (should be 2)`, version === 2 ? 'success' : 'error');
+                addResult('analysis-results', `Total Length: ${(length/1024/1024).toFixed(2)} MB`, 'info');
+                
+                // First chunk (JSON)
+                const chunk0Length = view.getUint32(12, true);
+                const chunk0Type = view.getUint32(16, true);
+                
+                addResult('analysis-results', `JSON Chunk Type: 0x${chunk0Type.toString(16)} (should be 0x4e4f534a for JSON)`, chunk0Type === 0x4e4f534a ? 'success' : 'error');
+                addResult('analysis-results', `JSON Chunk Length: ${chunk0Length} bytes`, 'info');
+                
+                // Parse JSON
+                const jsonBytes = new Uint8Array(buffer, 20, chunk0Length);
+                const jsonStr = new TextDecoder().decode(jsonBytes);
+                const gltf = JSON.parse(jsonStr);
+                
+                log(`GLB JSON parsed successfully`);
+                
+                // Asset info
+                addResult('analysis-results', `Generator: ${gltf.asset?.generator || 'unknown'}`, 'info');
+                addResult('analysis-results', `glTF Version: ${gltf.asset?.version}`, gltf.asset?.version === '2.0' ? 'success' : 'error');
+                
+                // Extensions
+                const extsUsed = gltf.extensionsUsed || [];
+                const extsRequired = gltf.extensionsRequired || [];
+                addResult('analysis-results', `Extensions Used: ${extsUsed.length ? extsUsed.join(', ') : 'none'}`, 'info');
+                addResult('analysis-results', `Extensions Required: ${extsRequired.length ? extsRequired.join(', ') : 'none'}`, extsRequired.length === 0 ? 'success' : 'info');
+                
+                // Meshes
+                const meshes = gltf.meshes || [];
+                addResult('analysis-results', `Meshes: ${meshes.length}`, meshes.length > 0 ? 'success' : 'error');
+                
+                // Primitive modes
+                const modes = new Set();
+                const modeNames = {0: 'POINTS', 1: 'LINES', 2: 'LINE_LOOP', 3: 'LINE_STRIP', 4: 'TRIANGLES', 5: 'TRIANGLE_STRIP', 6: 'TRIANGLE_FAN'};
+                let totalPrimitives = 0;
+                
+                meshes.forEach((mesh, i) => {
+                    mesh.primitives?.forEach(prim => {
+                        const mode = prim.mode ?? 4; // default is TRIANGULAR
+                        modes.add(mode);
+                        totalPrimitives++;
+                    });
+                });
+                
+                const modeList = Array.from(modes).map(m => `${modeNames[m] || 'UNKNOWN'}(${m})`).join(', ');
+                addResult('analysis-results', `Primitive Modes: ${modeList}`, modes.has(0) ? 'error' : 'success');
+                addResult('analysis-results', `Total Primitives: ${totalPrimitives}`, 'info');
+                
+                if (modes.has(0)) {
+                    addResult('analysis-results', '⚠️ POINT CLOUD DETECTED - Three.js GLTFLoader may not render this correctly!', 'error');
+                    log('WARNING: GLB uses POINTS mode (point cloud). This is likely the issue!', 'error');
+                }
+                
+                // Accessors info
+                const accessors = gltf.accessors || [];
+                let totalVertices = 0;
+                accessors.forEach(acc => {
+                    if (acc.type === 'VEC3') totalVertices = Math.max(totalVertices, acc.count);
+                });
+                addResult('analysis-results', `Estimated Vertices: ${totalVertices.toLocaleString()}`, 'info');
+                
+                // Materials
+                const materials = gltf.materials || [];
+                addResult('analysis-results', `Materials: ${materials.length}`, 'info');
+                
+                // Buffers
+                const buffers = gltf.buffers || [];
+                const totalBufferSize = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+                addResult('analysis-results', `Binary Buffer Size: ${(totalBufferSize/1024/1024).toFixed(2)} MB`, 'info');
+                
+                // Log full structure for debugging
+                log(`Full GLB structure: meshes=${meshes.length}, materials=${materials.length}, accessors=${accessors.length}`);
+                
+            } catch (e) {
+                addResult('analysis-results', `✗ Analysis failed: ${e.message}`, 'error');
+                log(`GLB analysis error: ${e.message}`, 'error');
+                console.error(e);
+            }
+        };
+
+        // 4. GLTFLoader Tests
+        let scene, camera, renderer;
+        
+        function initThree() {
+            if (scene) return;
+            
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+            
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(0, 2, 5);
+            camera.lookAt(0, 0, 0);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            // Lights
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(5, 10, 5);
+            scene.add(dirLight);
+            
+            // Grid helper
+            scene.add(new THREE.GridHelper(10, 10));
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            log('Three.js scene initialized');
+        }
+        
+        function clearScene() {
+            if (!scene) return;
+            const toRemove = [];
+            scene.traverse(obj => {
+                if (obj.type === 'Mesh' || obj.type === 'Points' || obj.type === 'Group') {
+                    if (obj.name !== 'grid') toRemove.push(obj);
+                }
+            });
+            toRemove.forEach(obj => {
+                if (obj.parent) obj.parent.remove(obj);
+            });
+        }
+        
+        window.testExternalGLB = async function() {
+            initThree();
+            clearScene();
+            const container = document.getElementById('loader-results');
+            container.innerHTML = '';
+            
+            const loader = new GLTFLoader();
+            log('Loading external Duck.glb...');
+            addResult('loader-results', 'Loading external Duck.glb...', 'pending');
+            
+            loader.load(
+                EXTERNAL_GLB,
+                (gltf) => {
+                    container.innerHTML = '';
+                    addResult('loader-results', '✓ External Duck.glb loaded successfully!', 'success');
+                    
+                    const model = gltf.scene;
+                    
+                    // Count meshes
+                    let meshCount = 0;
+                    let vertexCount = 0;
+                    model.traverse(obj => {
+                        if (obj.isMesh) {
+                            meshCount++;
+                            vertexCount += obj.geometry.attributes.position?.count || 0;
+                        }
+                    });
+                    
+                    addResult('loader-results', `Meshes: ${meshCount}, Vertices: ${vertexCount.toLocaleString()}`, 'info');
+                    
+                    // Auto-scale and center
+                    const box = new THREE.Box3().setFromObject(model);
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 2 / maxDim;
+                    model.scale.setScalar(scale);
+                    
+                    const center = box.getCenter(new THREE.Vector3());
+                    model.position.sub(center.multiplyScalar(scale));
+                    
+                    scene.add(model);
+                    log('External GLB rendered successfully');
+                },
+                (progress) => {
+                    if (progress.total) {
+                        const pct = (progress.loaded / progress.total * 100).toFixed(0);
+                        log(`Loading: ${pct}%`);
+                    }
+                },
+                (error) => {
+                    container.innerHTML = '';
+                    addResult('loader-results', `✗ External Duck.glb failed: ${error.message}`, 'error');
+                    log(`External GLB error: ${error.message}`, 'error');
+                    console.error(error);
+                }
+            );
+        };
+        
+        window.testYourGLB = async function() {
+            initThree();
+            clearScene();
+            const container = document.getElementById('loader-results');
+            container.innerHTML = '';
+            
+            const loader = new GLTFLoader();
+            const url = YOUR_BASE + 'model_root.glb';
+            log(`Loading ${url}...`);
+            addResult('loader-results', 'Loading model_root.glb...', 'pending');
+            
+            loader.load(
+                url,
+                (gltf) => {
+                    container.innerHTML = '';
+                    addResult('loader-results', '✓ model_root.glb loaded!', 'success');
+                    
+                    const model = gltf.scene;
+                    
+                    // Detailed analysis
+                    let meshCount = 0;
+                    let pointsCount = 0;
+                    let vertexCount = 0;
+                    let objectTypes = {};
+                    
+                    model.traverse(obj => {
+                        const type = obj.type;
+                        objectTypes[type] = (objectTypes[type] || 0) + 1;
+                        
+                        if (obj.isMesh) {
+                            meshCount++;
+                            vertexCount += obj.geometry.attributes.position?.count || 0;
+                            log(`Mesh found: ${obj.name || 'unnamed'}, vertices=${obj.geometry.attributes.position?.count}`);
+                        }
+                        if (obj.isPoints) {
+                            pointsCount++;
+                            vertexCount += obj.geometry.attributes.position?.count || 0;
+                            log(`Points found: ${obj.name || 'unnamed'}, points=${obj.geometry.attributes.position?.count}`);
+                        }
+                    });
+                    
+                    addResult('loader-results', `Object types: ${JSON.stringify(objectTypes)}`, 'info');
+                    addResult('loader-results', `Meshes: ${meshCount}, Points objects: ${pointsCount}`, meshCount > 0 ? 'success' : 'error');
+                    addResult('loader-results', `Total vertices/points: ${vertexCount.toLocaleString()}`, 'info');
+                    
+                    if (meshCount === 0 && pointsCount === 0) {
+                        addResult('loader-results', '⚠️ No renderable geometry found!', 'error');
+                    }
+                    
+                    if (pointsCount > 0 && meshCount === 0) {
+                        addResult('loader-results', '⚠️ Only point cloud data - may need to render as Points material', 'error');
+                    }
+                    
+                    // Try to render anyway
+                    const box = new THREE.Box3().setFromObject(model);
+                    if (!box.isEmpty()) {
+                        const size = box.getSize(new THREE.Vector3());
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        const scale = 2 / maxDim;
+                        model.scale.setScalar(scale);
+                        
+                        const center = box.getCenter(new THREE.Vector3());
+                        model.position.sub(center.multiplyScalar(scale));
+                        
+                        scene.add(model);
+                        log('Model added to scene');
+                    } else {
+                        addResult('loader-results', '⚠️ Bounding box is empty - nothing to render', 'error');
+                    }
+                },
+                (progress) => {
+                    if (progress.total) {
+                        const pct = (progress.loaded / progress.total * 100).toFixed(0);
+                        log(`Loading: ${pct}%`);
+                    }
+                },
+                (error) => {
+                    container.innerHTML = '';
+                    addResult('loader-results', `✗ model_root.glb failed: ${error.message}`, 'error');
+                    log(`Your GLB error: ${error.message}`, 'error');
+                    console.error(error);
+                }
+            );
+        };
+        
+        window.testAllYourGLBs = async function() {
+            const container = document.getElementById('loader-results');
+            container.innerHTML = '';
+            
+            const loader = new GLTFLoader();
+            
+            for (const glb of YOUR_GLBS) {
+                const url = YOUR_BASE + glb;
+                log(`Testing ${glb}...`);
+                
+                try {
+                    const gltf = await new Promise((resolve, reject) => {
+                        loader.load(url, resolve, undefined, reject);
+                    });
+                    
+                    let meshCount = 0;
+                    let pointsCount = 0;
+                    gltf.scene.traverse(obj => {
+                        if (obj.isMesh) meshCount++;
+                        if (obj.isPoints) pointsCount++;
+                    });
+                    
+                    addResult('loader-results', `✓ ${glb}: meshes=${meshCount}, points=${pointsCount}`, meshCount > 0 ? 'success' : 'error');
+                } catch (e) {
+                    addResult('loader-results', `✗ ${glb}: ${e.message}`, 'error');
+                }
+            }
+        };
+
+        // 5. TilesRenderer Test
+        window.testTilesRenderer = async function() {
+            const container = document.getElementById('tiles-results');
+            container.innerHTML = '';
+            addResult('tiles-results', 'Loading 3d-tiles-renderer dynamically...', 'pending');
+            
+            try {
+                // Dynamic import of 3d-tiles-renderer
+                const { TilesRenderer } = await import('https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.3.34/+esm');
+                
+                initThree();
+                clearScene();
+                
+                addResult('tiles-results', '3d-tiles-renderer loaded', 'success');
+                log('Creating TilesRenderer...');
+                
+                const tilesRenderer = new TilesRenderer(TILESET_URL);
+                tilesRenderer.setCamera(camera);
+                tilesRenderer.setResolutionFromRenderer(camera, renderer);
+                
+                // Event listeners
+                tilesRenderer.addEventListener('load-tile-set', (event) => {
+                    addResult('tiles-results', `✓ Tileset loaded`, 'success');
+                    log('load-tile-set event fired');
+                });
+                
+                tilesRenderer.addEventListener('load-model', (event) => {
+                    addResult('tiles-results', `✓ Model loaded: ${event.url || 'unknown'}`, 'success');
+                    log(`load-model: ${event.url}`);
+                });
+                
+                tilesRenderer.addEventListener('load-content', (event) => {
+                    const uri = event.tile?.content?.uri || 'unknown';
+                    addResult('tiles-results', `load-content: ${uri}`, 'info');
+                    log(`load-content: ${uri}`);
+                });
+                
+                tilesRenderer.addEventListener('error', (event) => {
+                    addResult('tiles-results', `✗ Error: ${JSON.stringify(event)}`, 'error');
+                    log(`TilesRenderer error: ${JSON.stringify(event)}`, 'error');
+                });
+                
+                scene.add(tilesRenderer.group);
+                
+                // Force update loop
+                let frameCount = 0;
+                const updateLoop = () => {
+                    tilesRenderer.update();
+                    frameCount++;
+                    
+                    if (frameCount < 300) { // Run for 5 seconds at 60fps
+                        requestAnimationFrame(updateLoop);
+                    } else {
+                        // Report final stats
+                        const stats = {
+                            visible: tilesRenderer.stats?.visible || 0,
+                            parsing: tilesRenderer.stats?.parsing || 0,
+                            downloading: tilesRenderer.stats?.downloading || 0,
+                        };
+                        addResult('tiles-results', `Final stats: ${JSON.stringify(stats)}`, 'info');
+                        
+                        // Check group children
+                        let meshCount = 0;
+                        tilesRenderer.group.traverse(obj => {
+                            if (obj.isMesh) meshCount++;
+                        });
+                        addResult('tiles-results', `Meshes in group: ${meshCount}`, meshCount > 0 ? 'success' : 'error');
+                    }
+                };
+                
+                updateLoop();
+                
+            } catch (e) {
+                addResult('tiles-results', `✗ TilesRenderer test failed: ${e.message}`, 'error');
+                log(`TilesRenderer error: ${e.message}`, 'error');
+                console.error(e);
+            }
+        };
+
+        log('Diagnostic page loaded. Click buttons to run tests.');
+    </script>
+</body>
+</html>

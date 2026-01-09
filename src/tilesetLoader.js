@@ -1,17 +1,37 @@
 import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { getTilesetOriginFromTransform, computeTilesetTransform, ecefToWgs84 } from './geospatialTransform.js';
 
 let tilesRenderer = null;
 let tilesetOriginWgs84 = null;
+let dracoLoader = null;
 
 /**
- * Load a 3D Tiles tileset
- * Returns a promise that resolves when the root tile is loaded
+ * Initialize DRACO loader (call once at startup)
+ */
+function initDracoLoader() {
+  if (dracoLoader) return dracoLoader;
+  
+  dracoLoader = new DRACOLoader();
+  // Use Google's hosted DRACO decoder (works everywhere, no local files needed)
+  dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+  dracoLoader.setDecoderConfig({ type: 'js' }); // Use JS decoder for maximum compatibility
+  
+  console.log('DRACO loader initialized');
+  return dracoLoader;
+}
+
+/**
+ * Load a 3D Tiles tileset with DRACO support
  */
 export async function loadTileset(url, scene, camera) {
   return new Promise(async (resolve, reject) => {
     console.log('Loading tileset from:', url);
+    
+    // Initialize DRACO
+    initDracoLoader();
     
     // Fetch tileset.json directly to get the transform
     try {
@@ -28,18 +48,41 @@ export async function loadTileset(url, scene, camera) {
     
     tilesRenderer = new TilesRenderer(url);
     
+    // Configure the GLTFLoader used by TilesRenderer to use DRACO
+    tilesRenderer.manager.addHandler(/\.gltf$|\.glb$/i, {
+      load(url, onLoad, onProgress, onError, loader) {
+        const gltfLoader = new GLTFLoader(loader.manager);
+        gltfLoader.setDRACOLoader(dracoLoader);
+        gltfLoader.load(url, onLoad, onProgress, onError);
+      }
+    });
+    
     tilesRenderer.setCamera(camera);
     tilesRenderer.setResolutionFromRenderer(camera, window.renderer);
     
-    // Called when a tile's content (GLB) is loaded
+    // Loading settings
+    tilesRenderer.errorTarget = 50;
+    tilesRenderer.maxDepth = 15;
+    tilesRenderer.loadSiblings = true;
+    
+    // Disable frustum culling on the group
+    tilesRenderer.group.frustumCulled = false;
+    
+    // Event listeners
     tilesRenderer.addEventListener('load-content', (event) => {
       console.log('Tile content loaded:', event.tile?.content?.uri);
     });
     
-    // Handle errors
+    tilesRenderer.addEventListener('load-model', (event) => {
+      console.log('Model loaded');
+    });
+    
+    tilesRenderer.addEventListener('load-tile-set', (event) => {
+      console.log('Tileset loaded');
+    });
+    
     tilesRenderer.addEventListener('error', (event) => {
       console.error('Tileset error:', event);
-      reject(event);
     });
     
     // Add to scene
@@ -48,13 +91,13 @@ export async function loadTileset(url, scene, camera) {
     // Wait for initial load
     const checkLoaded = () => {
       if (tilesRenderer.root) {
+        console.log('Tileset root ready');
         resolve(tilesRenderer);
       } else {
         setTimeout(checkLoaded, 100);
       }
     };
     
-    // Start loading
     tilesRenderer.update();
     checkLoaded();
   });
@@ -65,43 +108,6 @@ export async function loadTileset(url, scene, camera) {
  */
 export function getTilesetOrigin() {
   return tilesetOriginWgs84;
-}
-
-/**
- * Apply geospatial positioning to the tileset based on calibration
- */
-export function positionTileset() {
-  if (!tilesRenderer || !tilesetOriginWgs84) {
-    console.warn('Cannot position tileset - not loaded yet');
-    return;
-  }
-
-  const transform = computeTilesetTransform(tilesetOriginWgs84);
-  
-  // Apply to the tileset's group
-  // Note: 3DTilesRenderer already applies the ECEF transform internally.
-  // We need to counteract that and apply our local positioning instead.
-  // This is the tricky part - we may need to adjust this approach.
-  
-  tilesRenderer.group.matrix.copy(transform);
-  tilesRenderer.group.matrixAutoUpdate = false;
-  
-  console.log('Tileset positioned at:', tilesRenderer.group.position);
-}
-
-/**
- * Alternative approach: directly set position/rotation on the group
- */
-export function positionTilesetDirect(position, rotation) {
-  if (!tilesRenderer) {
-    console.warn('Cannot position tileset - not loaded yet');
-    return;
-  }
-  
-  tilesRenderer.group.position.copy(position);
-  if (rotation) {
-    tilesRenderer.group.rotation.copy(rotation);
-  }
 }
 
 /**
@@ -124,8 +130,9 @@ export function getLoadingStats() {
   
   return {
     loaded: tilesRenderer.stats?.visible || 0,
-    total: tilesRenderer.stats?.parsing || 0,
-    loading: tilesRenderer.stats?.downloading > 0
+    parsing: tilesRenderer.stats?.parsing || 0,
+    downloading: tilesRenderer.stats?.downloading || 0,
+    loading: (tilesRenderer.stats?.downloading || 0) > 0
   };
 }
 
@@ -153,6 +160,11 @@ export function debugTilesetTransform() {
   console.log('=== Tileset Transform Debug ===');
   console.log('Root transform:', tilesRenderer.root.transform?.elements);
   console.log('Group position:', tilesRenderer.group.position);
-  console.log('Group rotation:', tilesRenderer.group.rotation);
   console.log('Origin WGS84:', tilesetOriginWgs84);
+  
+  let meshCount = 0;
+  tilesRenderer.group.traverse((obj) => {
+    if (obj.isMesh) meshCount++;
+  });
+  console.log('Meshes in group:', meshCount);
 }
