@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 // CONFIGURATION - UPDATE THIS!
 // ============================================================
 // Set this to your computer's IP where log_server.py is running
-const LOG_SERVER = 'http://192.168.1.XXX:8765';  // <-- CHANGE THIS!
+const LOG_SERVER = 'https://10.0.0.10:8765';
 // ============================================================
 
 // Initialize remote logging first
@@ -268,7 +268,7 @@ async function loadTileset(url) {
   
   // Log final group transform
   rlog.info(`Final group position: ${tilesRenderer.group.position.toArray().map(v => v.toFixed(2))}`);
-  rlog.info(`Final group rotation: ${tilesRenderer.group.rotation.toArray().map(v => v.toFixed(2))}`);
+  rlog.info(`Final group rotation: x=${tilesRenderer.group.rotation.x.toFixed(2)}, y=${tilesRenderer.group.rotation.y.toFixed(2)}, z=${tilesRenderer.group.rotation.z.toFixed(2)}`);
   rlog.info(`Group visible: ${tilesRenderer.group.visible}`);
   
   // Add a green cube near origin as a "did content load" test
@@ -280,6 +280,29 @@ async function loadTileset(url) {
   testCube.name = 'TestCube';
   scene.add(testCube);
   rlog.info('Green test cube added at (0, 0.25, -1)');
+
+  // TEST: Load one GLB directly to verify DRACO works
+  const testLoader = new GLTFLoader();
+  const testDraco = new DRACOLoader();
+  testDraco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+  testLoader.setDRACOLoader(testDraco);
+  
+  rlog.info('Testing direct GLB load...');
+  testLoader.load(
+    'https://connor-haley.github.io/site3d-ar-test/tiles/model_root.glb',
+    (gltf) => {
+      rlog.success('Direct GLB loaded! Meshes: ' + gltf.scene.children.length);
+      gltf.scene.position.set(0, 0, -2);
+      gltf.scene.scale.set(0.01, 0.01, 0.01); // Scale down - might be huge
+      scene.add(gltf.scene);
+    },
+    (progress) => {
+      rlog.info(`GLB progress: ${(progress.loaded / progress.total * 100).toFixed(0)}%`);
+    },
+    (error) => {
+      rlog.error(`Direct GLB failed: ${error.message}`);
+    }
+  );
   
   // Poll for loading status
   let pollCount = 0;
