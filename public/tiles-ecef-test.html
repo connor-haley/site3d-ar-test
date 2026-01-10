@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TilesRenderer ECEF Camera Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 20px; font-size: 20px; }
+        .section {
+            background: #2a2a3e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .log {
+            background: #111;
+            border-radius: 4px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 250px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .log .success { color: #8f8; }
+        .log .error { color: #f88; }
+        .log .info { color: #88f; }
+        button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 8px 4px 8px 0;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 350px;
+            background: #111;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>TilesRenderer - Camera at ECEF</h1>
+
+    <div class="section">
+        <button onclick="runTest()">Run Test</button>
+        <button onclick="clearLog()">Clear</button>
+        <div id="log" class="log"></div>
+        <div id="canvas-container"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        const TILESET_URL = 'https://connor-haley.github.io/site3d-ar-test/tiles/tileset.json';
+        
+        // ECEF position from your tileset transform (the translation part)
+        const TILESET_ECEF = {
+            x: -2732537.683857578,
+            y: 5187435.891080961,
+            z: -2503631.145137336
+        };
+        
+        const logEl = document.getElementById('log');
+        function log(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `<span class="${type}">[${time}] ${msg}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        window.clearLog = () => { logEl.innerHTML = ''; };
+
+        let scene, camera, renderer, controls, tilesRenderer;
+
+        function initScene() {
+            if (scene) return;
+            
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+            
+            // Camera with huge far plane for ECEF coordinates
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 1, 1e8);
+            
+            // Position camera AT the tileset location in ECEF
+            camera.position.set(
+                TILESET_ECEF.x,
+                TILESET_ECEF.y + 500,  // Slightly above
+                TILESET_ECEF.z + 1000   // Slightly back
+            );
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(TILESET_ECEF.x, TILESET_ECEF.y, TILESET_ECEF.z);
+            controls.enableDamping = true;
+            controls.update();
+            
+            scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(TILESET_ECEF.x + 1000, TILESET_ECEF.y + 2000, TILESET_ECEF.z + 1000);
+            scene.add(dirLight);
+            
+            log(`Camera at ECEF: ${camera.position.x.toFixed(0)}, ${camera.position.y.toFixed(0)}, ${camera.position.z.toFixed(0)}`, 'success');
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                if (tilesRenderer) {
+                    tilesRenderer.update();
+                }
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        window.runTest = async function() {
+            initScene();
+            log('Loading 3d-tiles-renderer...', 'info');
+            
+            const { TilesRenderer } = await import('https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.3.34/+esm');
+            log('Library loaded', 'success');
+            
+            // DRACO setup
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+            dracoLoader.setDecoderConfig({ type: 'js' });
+            
+            const gltfLoader = new GLTFLoader();
+            gltfLoader.setDRACOLoader(dracoLoader);
+            log('DRACO configured', 'success');
+            
+            // Create TilesRenderer
+            tilesRenderer = new TilesRenderer(TILESET_URL);
+            tilesRenderer.manager.addHandler(/\.gltf$|\.glb$/i, gltfLoader);
+            
+            // Critical: set camera and renderer for LOD calculations
+            tilesRenderer.setCamera(camera);
+            tilesRenderer.setResolutionFromRenderer(camera, renderer);
+            
+            // Aggressive settings
+            tilesRenderer.errorTarget = 1000;  // Very high = load everything
+            tilesRenderer.errorThreshold = 1000;
+            tilesRenderer.maxDepth = 15;
+            tilesRenderer.loadSiblings = true;
+            tilesRenderer.displayActiveTiles = true;
+            tilesRenderer.autoDisableRendererCulling = false;
+            
+            log('TilesRenderer created with high errorTarget', 'info');
+            
+            // Events
+            tilesRenderer.addEventListener('load-tile-set', () => {
+                log('EVENT: load-tile-set', 'success');
+                log(`Root children: ${tilesRenderer.root?.children?.length}`, 'info');
+                
+                // Force traversal
+                if (tilesRenderer.root) {
+                    log(`Root geometricError: ${tilesRenderer.root.geometricError}`, 'info');
+                    log(`Root refine: ${tilesRenderer.root.refine}`, 'info');
+                }
+            });
+            
+            tilesRenderer.addEventListener('load-content', (event) => {
+                const uri = event.tile?.content?.uri || '?';
+                log(`EVENT: load-content - ${uri}`, 'success');
+            });
+            
+            tilesRenderer.addEventListener('tile-visibility-change', (event) => {
+                log(`EVENT: tile-visibility-change`, 'info');
+            });
+            
+            tilesRenderer.addEventListener('error', (event) => {
+                log(`ERROR: ${event.message || JSON.stringify(event)}`, 'error');
+            });
+            
+            scene.add(tilesRenderer.group);
+            log('Group added to scene', 'info');
+            
+            // Monitor loop
+            let frame = 0;
+            let lastMeshes = 0;
+            const monitor = setInterval(() => {
+                frame++;
+                
+                let meshes = 0, verts = 0;
+                tilesRenderer.group.traverse(o => {
+                    if (o.isMesh) {
+                        meshes++;
+                        verts += o.geometry?.attributes?.position?.count || 0;
+                    }
+                });
+                
+                const s = tilesRenderer.stats || {};
+                if (meshes !== lastMeshes || frame % 5 === 0) {
+                    log(`[${frame}] dl=${s.downloading||0} parse=${s.parsing||0} vis=${s.visible||0} mesh=${meshes} verts=${verts}`, meshes > 0 ? 'success' : 'info');
+                    lastMeshes = meshes;
+                }
+                
+                if (frame >= 30) {
+                    clearInterval(monitor);
+                    log(`DONE: ${meshes} meshes, ${verts.toLocaleString()} verts`, meshes > 0 ? 'success' : 'error');
+                }
+            }, 1000);
+        };
+        
+        log('Ready. Camera will be positioned at ECEF tileset location.', 'info');
+    </script>
+</body>
+</html>
