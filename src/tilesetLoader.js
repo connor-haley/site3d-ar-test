@@ -2,64 +2,68 @@ import * as THREE from 'three';
 import { TilesRenderer } from '3d-tiles-renderer';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { getTilesetOriginFromTransform, computeTilesetTransform, ecefToWgs84 } from './geospatialTransform.js';
 
 let tilesRenderer = null;
-let tilesetOriginWgs84 = null;
+
+// Configurable tileset origin - the WGS84 position that corresponds to (0,0,0) in the tileset
+// These defaults match the re-centered tileset
+const DEFAULT_TILESET_ORIGIN = {
+  lat: -23.262,
+  lon: 117.778,
+  alt: 473
+};
+
+let tilesetOriginWgs84 = { ...DEFAULT_TILESET_ORIGIN };
 
 /**
  * Load a 3D Tiles tileset with DRACO support
+ * @param {string} url - URL to tileset.json
+ * @param {THREE.Object3D} parent - Parent object to add tileset to
+ * @param {THREE.Camera} camera - Camera for LOD calculations
+ * @param {object} [originOverride] - Optional {lat, lon, alt} to override default origin
  */
-export async function loadTileset(url, scene, camera) {
-  return new Promise(async (resolve, reject) => {
+export async function loadTileset(url, parent, camera, originOverride = null) {
+  return new Promise((resolve, reject) => {
     console.log('Loading tileset from:', url);
+    
+    // Set origin (use override if provided, otherwise defaults)
+    if (originOverride) {
+      tilesetOriginWgs84 = { ...originOverride };
+      console.log('Using custom tileset origin:', tilesetOriginWgs84);
+    } else {
+      tilesetOriginWgs84 = { ...DEFAULT_TILESET_ORIGIN };
+      console.log('Using default tileset origin:', tilesetOriginWgs84);
+    }
     
     // Setup DRACO loader
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
     dracoLoader.setDecoderConfig({ type: 'js' });
-    console.log('DRACO loader initialized');
     
     // Setup GLTF loader with DRACO
     const gltfLoader = new GLTFLoader();
     gltfLoader.setDRACOLoader(dracoLoader);
-    console.log('GLTF loader configured with DRACO');
+    console.log('DRACO loader configured');
     
-    // Fetch tileset.json directly to get the transform
-    try {
-      const response = await fetch(url);
-      const tilesetJson = await response.json();
-      
-      if (tilesetJson.root && tilesetJson.root.transform) {
-        tilesetOriginWgs84 = getTilesetOriginFromTransform(tilesetJson.root.transform);
-        console.log('Tileset origin (WGS84):', tilesetOriginWgs84);
-      }
-    } catch (e) {
-      console.warn('Could not fetch tileset.json directly:', e);
-    }
-    
+    // Create TilesRenderer
     tilesRenderer = new TilesRenderer(url);
     
-    // Register the GLTF loader with DRACO support
-    // This is the correct API for 3d-tiles-renderer
+    // Register GLTF/GLB handler with DRACO support
     tilesRenderer.manager.addHandler(/\.gltf$|\.glb$/i, gltfLoader);
-    console.log('Registered GLTF/GLB handler with DRACO');
     
+    // Configure camera for LOD
     tilesRenderer.setCamera(camera);
     tilesRenderer.setResolutionFromRenderer(camera, window.renderer);
     
-    // Loading settings - more aggressive for debugging
-    tilesRenderer.errorTarget = 100;
+    // Loading settings - permissive for testing
+    tilesRenderer.errorTarget = 100;  // High value for testing (default ~6)
     tilesRenderer.maxDepth = 15;
     tilesRenderer.loadSiblings = true;
     
-    // Disable frustum culling on the group
-    tilesRenderer.group.frustumCulled = false;
-    
-    // Track what's happening
+    // Debug event listeners
     let loadedCount = 0;
     
-    tilesRenderer.addEventListener('load-tile-set', (event) => {
+    tilesRenderer.addEventListener('load-tile-set', () => {
       console.log('EVENT: load-tile-set - tileset.json loaded');
       console.log('Root children:', tilesRenderer.root?.children?.length);
     });
@@ -69,28 +73,28 @@ export async function loadTileset(url, scene, camera) {
       const uri = event.tile?.content?.uri || 'unknown';
       console.log(`EVENT: load-content #${loadedCount} - ${uri}`);
       
-      // Check what got loaded
       let meshCount = 0;
       tilesRenderer.group.traverse(obj => {
         if (obj.isMesh) meshCount++;
       });
-      console.log(`Total meshes in group now: ${meshCount}`);
+      console.log(`Total meshes in group: ${meshCount}`);
     });
     
     tilesRenderer.addEventListener('load-model', (event) => {
-      console.log('EVENT: load-model', event);
+      console.log('EVENT: load-model', event.url || event);
     });
     
     tilesRenderer.addEventListener('error', (event) => {
       console.error('EVENT: error', event);
     });
     
-    // Add to scene
-    scene.add(tilesRenderer.group);
-    console.log('Tileset group added to scene');
+    // Add to parent
+    parent.add(tilesRenderer.group);
+    console.log('Tileset group added to parent');
     
     // Wait for initial load
     const checkLoaded = () => {
+      tilesRenderer.update();
       if (tilesRenderer.root) {
         console.log('Tileset root ready');
         resolve(tilesRenderer);
@@ -98,17 +102,23 @@ export async function loadTileset(url, scene, camera) {
         setTimeout(checkLoaded, 100);
       }
     };
-    
-    tilesRenderer.update();
     checkLoaded();
   });
 }
 
 /**
- * Get the WGS84 origin of the loaded tileset
+ * Get the WGS84 origin of the tileset (where tileset's 0,0,0 is in the real world)
  */
 export function getTilesetOrigin() {
   return tilesetOriginWgs84;
+}
+
+/**
+ * Set the tileset origin manually
+ */
+export function setTilesetOrigin(lat, lon, alt) {
+  tilesetOriginWgs84 = { lat, lon, alt };
+  console.log('Tileset origin updated:', tilesetOriginWgs84);
 }
 
 /**
@@ -140,17 +150,16 @@ export function getLoadingStats() {
 /**
  * Dispose of the tileset
  */
-export function disposeTileset(scene) {
+export function disposeTileset(parent) {
   if (tilesRenderer) {
-    scene.remove(tilesRenderer.group);
+    parent.remove(tilesRenderer.group);
     tilesRenderer.dispose();
     tilesRenderer = null;
-    tilesetOriginWgs84 = null;
   }
 }
 
 /**
- * Debug: get the tileset's internal state
+ * Debug: log tileset state
  */
 export function debugTilesetTransform() {
   if (!tilesRenderer) {
@@ -163,11 +172,10 @@ export function debugTilesetTransform() {
     return;
   }
   
-  console.log('=== Tileset Transform Debug ===');
-  console.log('Root transform:', tilesRenderer.root.transform?.elements);
+  console.log('=== Tileset Debug ===');
+  console.log('Origin WGS84:', tilesetOriginWgs84);
   console.log('Group position:', tilesRenderer.group.position);
   console.log('Group world position:', tilesRenderer.group.getWorldPosition(new THREE.Vector3()));
-  console.log('Origin WGS84:', tilesetOriginWgs84);
   
   let meshCount = 0;
   let totalVerts = 0;
@@ -177,9 +185,7 @@ export function debugTilesetTransform() {
       totalVerts += obj.geometry.attributes.position?.count || 0;
     }
   });
-  console.log('Meshes in group:', meshCount);
+  console.log('Meshes:', meshCount);
   console.log('Total vertices:', totalVerts);
-  
-  // Log stats
   console.log('Stats:', tilesRenderer.stats);
 }

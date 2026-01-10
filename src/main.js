@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { 
   setCalibrationOrigin, 
-  isCalibrated, 
   wgs84ToLocal,
   debugCalibration 
 } from './geospatialTransform.js';
 import { 
   loadTileset, 
-  getTilesetOrigin, 
+  getTilesetOrigin,
+  setTilesetOrigin,
   updateTileset,
   debugTilesetTransform 
 } from './tilesetLoader.js';
@@ -74,10 +74,9 @@ async function init() {
 }
 
 function setupThreeJS() {
-  // Scene
   scene = new THREE.Scene();
 
-  // Camera (will be controlled by WebXR)
+  // Camera (controlled by WebXR in AR mode)
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 10000);
 
   // Renderer
@@ -90,12 +89,12 @@ function setupThreeJS() {
   // Store globally for tilesetLoader
   window.renderer = renderer;
 
-  // Geospatial root object
+  // Geospatial root - tileset is added as child, then we position this group
   geospatialRoot = new THREE.Group();
   geospatialRoot.name = 'GeospatialRoot';
   scene.add(geospatialRoot);
 
-  // Basic lighting
+  // Lighting
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambientLight);
 
@@ -103,7 +102,7 @@ function setupThreeJS() {
   directionalLight.position.set(10, 20, 10);
   scene.add(directionalLight);
 
-  // Debug: add a small marker at origin
+  // Debug: marker at local origin
   const originMarker = new THREE.Mesh(
     new THREE.SphereGeometry(0.1, 16, 16),
     new THREE.MeshBasicMaterial({ color: 0xff0000 })
@@ -111,7 +110,6 @@ function setupThreeJS() {
   originMarker.name = 'OriginMarker';
   scene.add(originMarker);
 
-  // Handle resize
   window.addEventListener('resize', onWindowResize);
 }
 
@@ -139,14 +137,13 @@ async function startAR() {
     return;
   }
 
-  // Set calibration
+  // Set calibration: user's WGS84 position = local origin (0,0,0)
   setCalibrationOrigin(lat, lon, alt, heading);
   debugCalibration();
 
   setStatus('Starting AR session...', '');
   
   try {
-    // Request AR session with passthrough
     xrSession = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['local-floor'],
       optionalFeatures: ['dom-overlay'],
@@ -154,22 +151,15 @@ async function startAR() {
     });
 
     xrSession.addEventListener('end', onSessionEnd);
-
-    // Set up renderer for XR
     await renderer.xr.setSession(xrSession);
-    
-    // Get reference space
     xrRefSpace = await xrSession.requestReferenceSpace('local-floor');
 
-    // Hide overlay, show AR status
     overlay.classList.add('hidden');
     arStatusEl.classList.add('visible');
     setArStatus('Loading tileset...');
 
-    // Load tileset
     await loadTilesetAndPosition();
 
-    // Start render loop
     renderer.setAnimationLoop(onXRFrame);
 
   } catch (error) {
@@ -182,25 +172,18 @@ async function loadTilesetAndPosition() {
   try {
     await loadTileset(tilesetUrl, geospatialRoot, camera);
     
-    // Get the tileset's geospatial origin
+    // Get tileset's WGS84 origin (where tileset's 0,0,0 is in the real world)
     const origin = getTilesetOrigin();
+    console.log('Tileset origin:', origin);
     
-    if (origin) {
-      console.log('Tileset origin:', origin);
-      
-      // Compute where this should be in local coordinates
-      const localPos = wgs84ToLocal(origin.lat, origin.lon, origin.alt);
-      console.log('Tileset local position:', localPos);
-      
-      // Position the geospatial root
-      // The tileset is a child of geospatialRoot, so moving geospatialRoot moves everything
-      geospatialRoot.position.copy(localPos);
-      
-      setArStatus(`Loaded! Origin: ${origin.lat.toFixed(6)}, ${origin.lon.toFixed(6)}`);
-    } else {
-      setArStatus('Loaded (no geospatial origin found)');
-    }
+    // Convert to local coordinates (meters offset from user's calibrated position)
+    const localPos = wgs84ToLocal(origin.lat, origin.lon, origin.alt);
+    console.log('Tileset local position:', localPos);
     
+    // Position the tileset
+    geospatialRoot.position.copy(localPos);
+    
+    setArStatus(`Loaded! Origin: ${origin.lat.toFixed(6)}, ${origin.lon.toFixed(6)}`);
     tilesetLoaded = true;
     debugTilesetTransform();
     
@@ -212,11 +195,7 @@ async function loadTilesetAndPosition() {
 
 function onXRFrame(time, frame) {
   if (!xrSession || !frame) return;
-
-  // Update tileset LOD based on camera
   updateTileset(camera);
-
-  // Render
   renderer.render(scene, camera);
 }
 
@@ -228,7 +207,6 @@ function onSessionEnd() {
   renderer.setAnimationLoop(null);
 }
 
-// UI helpers
 function setStatus(text, type) {
   statusEl.textContent = text;
   statusEl.className = type || '';
@@ -246,7 +224,8 @@ window.debug = {
   debugCalibration,
   debugTilesetTransform,
   wgs84ToLocal,
-  getTilesetOrigin
+  getTilesetOrigin,
+  setTilesetOrigin
 };
 
 console.log('Geospatial AR Viewer loaded. Use window.debug for debugging.');
