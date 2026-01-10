@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLB Diagnostic (DRACO)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 20px; font-size: 20px; }
+        .section {
+            background: #2a2a3e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .section h2 { font-size: 16px; margin-bottom: 12px; color: #4a9eff; }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 4px 0;
+            font-size: 13px;
+            font-family: monospace;
+        }
+        .success { background: #14532d; }
+        .error { background: #7f1d1d; }
+        .info { background: #1e3a5f; }
+        button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 8px 4px 8px 0;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 300px;
+            background: #111;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+    </style>
+</head>
+<body>
+    <h1>GLB Diagnostic with DRACO Support</h1>
+
+    <div class="section">
+        <h2>Your GLBs use DRACO compression - testing with decoder...</h2>
+        <button onclick="testWithDraco()">Test model_root.glb with DRACO</button>
+        <button onclick="testAllWithDraco()">Test All GLBs with DRACO</button>
+        <div id="results"></div>
+        <div id="canvas-container"></div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+        const BASE_URL = 'https://connor-haley.github.io/site3d-ar-test/tiles/';
+        const GLBS = ['model_root.glb', 'model_0_0.glb', 'model_0_1.glb', 'model_0_2.glb', 
+                      'model_1_0.glb', 'model_1_1.glb', 'model_1_2.glb', 'model_1_3.glb',
+                      'model_2_0.glb', 'model_2_1.glb', 'model_2_2.glb'];
+
+        // Setup DRACO
+        const dracoLoader = new DRACOLoader();
+        dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+        dracoLoader.setDecoderConfig({ type: 'js' });
+
+        const gltfLoader = new GLTFLoader();
+        gltfLoader.setDRACOLoader(dracoLoader);
+
+        // Setup Three.js scene
+        let scene, camera, renderer;
+        
+        function initScene() {
+            if (scene) return;
+            
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+            
+            camera = new THREE.PerspectiveCamera(60, container.clientWidth / container.clientHeight, 0.1, 10000);
+            camera.position.set(0, 50, 100);
+            camera.lookAt(0, 0, 0);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+            
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(50, 100, 50);
+            scene.add(dirLight);
+            scene.add(new THREE.GridHelper(100, 10));
+            
+            function animate() {
+                requestAnimationFrame(animate);
+                renderer.render(scene, camera);
+            }
+            animate();
+        }
+
+        function addResult(msg, type) {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = msg;
+            document.getElementById('results').appendChild(div);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        window.testWithDraco = function() {
+            initScene();
+            clearResults();
+            
+            const url = BASE_URL + 'model_root.glb';
+            addResult('Loading model_root.glb with DRACO decoder...', 'info');
+            
+            gltfLoader.load(
+                url,
+                (gltf) => {
+                    addResult('✓ SUCCESS! model_root.glb loaded with DRACO', 'success');
+                    
+                    let meshCount = 0, vertexCount = 0;
+                    gltf.scene.traverse(obj => {
+                        if (obj.isMesh) {
+                            meshCount++;
+                            vertexCount += obj.geometry.attributes.position?.count || 0;
+                        }
+                    });
+                    
+                    addResult(`Meshes: ${meshCount}, Vertices: ${vertexCount.toLocaleString()}`, 'info');
+                    
+                    // Auto-fit to view
+                    const box = new THREE.Box3().setFromObject(gltf.scene);
+                    const size = box.getSize(new THREE.Vector3());
+                    const center = box.getCenter(new THREE.Vector3());
+                    
+                    addResult(`Bounding box: ${size.x.toFixed(1)} x ${size.y.toFixed(1)} x ${size.z.toFixed(1)}`, 'info');
+                    
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 50 / maxDim;
+                    gltf.scene.scale.setScalar(scale);
+                    gltf.scene.position.sub(center.multiplyScalar(scale));
+                    
+                    scene.add(gltf.scene);
+                    addResult('Model added to scene - check viewport below', 'success');
+                },
+                (progress) => {
+                    if (progress.total) {
+                        addResult(`Loading: ${(progress.loaded / progress.total * 100).toFixed(0)}%`, 'info');
+                    }
+                },
+                (error) => {
+                    addResult(`✗ FAILED: ${error.message}`, 'error');
+                    console.error(error);
+                }
+            );
+        };
+
+        window.testAllWithDraco = async function() {
+            clearResults();
+            addResult('Testing all GLB files with DRACO decoder...', 'info');
+            
+            for (const glb of GLBS) {
+                const url = BASE_URL + glb;
+                try {
+                    const gltf = await new Promise((resolve, reject) => {
+                        gltfLoader.load(url, resolve, undefined, reject);
+                    });
+                    
+                    let meshCount = 0, vertexCount = 0;
+                    gltf.scene.traverse(obj => {
+                        if (obj.isMesh) {
+                            meshCount++;
+                            vertexCount += obj.geometry.attributes.position?.count || 0;
+                        }
+                    });
+                    
+                    addResult(`✓ ${glb}: ${meshCount} meshes, ${vertexCount.toLocaleString()} vertices`, 'success');
+                } catch (e) {
+                    addResult(`✗ ${glb}: ${e.message}`, 'error');
+                }
+            }
+            
+            addResult('All tests complete!', 'info');
+        };
+    </script>
+</body>
+</html>
