@@ -101,15 +101,6 @@
       cursor: not-allowed;
     }
 
-    #calibrate-btn {
-      background: #22c55e;
-      color: #fff;
-    }
-
-    #calibrate-btn:hover {
-      background: #16a34a;
-    }
-
     #status {
       margin-top: 16px;
       padding: 12px;
@@ -128,17 +119,21 @@
       background: #14532d;
     }
 
+    /* AR Status - visible during AR session */
     #ar-status {
       position: fixed;
-      top: 20px;
-      left: 20px;
-      right: 20px;
-      padding: 12px;
-      background: rgba(0, 0, 0, 0.7);
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.85);
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 16px;
+      font-family: monospace;
       z-index: 50;
       display: none;
+      max-height: 30vh;
+      overflow-y: auto;
     }
 
     #ar-status.visible {
@@ -159,8 +154,16 @@
       margin-bottom: 8px;
       color: #4a9eff;
     }
+
+    .config-note {
+      margin-top: 12px;
+      padding: 12px;
+      background: #7f1d1d;
+      border-radius: 8px;
+      font-size: 12px;
+    }
   </style>
-  <script type="module" crossorigin src="/site3d-ar-test/assets/index-a0rigdqa.js"></script>
+  <script type="module" crossorigin src="/site3d-ar-test/assets/index-DGteuGz0.js"></script>
 </head>
 
 <body>
@@ -198,14 +201,19 @@
       <button id="enter-ar-btn" disabled>Enter AR</button>
 
       <div id="status">Checking WebXR support...</div>
+      
+      <div class="config-note">
+        ⚠️ <strong>Debug Mode:</strong> Update LOG_SERVER in main.js with your computer's IP, then run log_server.py
+      </div>
     </div>
 
     <div class="instructions">
-      <h3>Instructions</h3>
-      1. Enter your tileset URL<br>
-      2. Stand at a known location<br>
-      3. Enter coordinates and heading<br>
-      4. Tap "Enter AR" and look around
+      <h3>Debug Setup</h3>
+      1. On your computer, run: <code>python log_server.py</code><br>
+      2. Note your computer's IP (shown in terminal)<br>
+      3. Update LOG_SERVER in src/main.js<br>
+      4. Rebuild and enter AR<br>
+      5. View logs at http://localhost:8765
     </div>
   </div>
 
