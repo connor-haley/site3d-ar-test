@@ -9,6 +9,7 @@
     "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
+    "@gltf-transform/cli": "^4.3.0",
     "3d-tiles-renderer": "^0.3.34",
     "three": "^0.160.0"
   },

@@ -1,0 +1,3 @@
+venv/
+*.Zone.Identifier
+convert_ecef_to_local_draco.py

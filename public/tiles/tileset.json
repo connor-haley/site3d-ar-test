@@ -1,6 +1,6 @@
 {
   "asset": {
-    "version": "1.1"
+    "version": "1.0"
   },
   "geometricError": 8639.543173654461,
   "root": {
@@ -21,28 +21,26 @@
       ]
     },
     "geometricError": 8.639543173654461,
-    "contents": [
-      {
-        "uri": "model_root.glb"
-      }
-    ],
+    "content": {
+      "uri": "model_root.glb"
+    },
     "transform": [
-      -0.8847559094006928,
-      -0.4660546971982506,
-      0.0,
-      0.0,
-      -0.18406501185774346,
-      0.34942809917818035,
-      0.9187056519443714,
-      0.0,
-      -0.4281670844312554,
-      0.8128302545575987,
-      -0.39494293902469946,
-      0.0,
-      -2732537.683857578,
-      5187435.891080961,
-      -2503631.145137336,
-      1.0
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
     ],
     "children": [
       {
@@ -63,11 +61,9 @@
           ]
         },
         "geometricError": 0.04096524299041859,
-        "contents": [
-          {
-            "uri": "model_0_0.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_0_0.glb"
+        }
       },
       {
         "boundingVolume": {
@@ -87,11 +83,9 @@
           ]
         },
         "geometricError": 0.0340634915842766,
-        "contents": [
-          {
-            "uri": "model_0_1.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_0_1.glb"
+        }
       },
       {
         "boundingVolume": {
@@ -111,11 +105,9 @@
           ]
         },
         "geometricError": 0.04095862660220728,
-        "contents": [
-          {
-            "uri": "model_1_0.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_1_0.glb"
+        }
       },
       {
         "boundingVolume": {
@@ -135,11 +127,9 @@
           ]
         },
         "geometricError": 0.04095811891366554,
-        "contents": [
-          {
-            "uri": "model_1_1.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_1_1.glb"
+        }
       },
       {
         "boundingVolume": {
@@ -159,11 +149,9 @@
           ]
         },
         "geometricError": 0.004500015180477685,
-        "contents": [
-          {
-            "uri": "model_2_0.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_2_0.glb"
+        }
       },
       {
         "boundingVolume": {
@@ -183,11 +171,9 @@
           ]
         },
         "geometricError": 0.008017880489129188,
-        "contents": [
-          {
-            "uri": "model_2_1.glb"
-          }
-        ]
+        "content": {
+          "uri": "model_2_1.glb"
+        }
       }
     ],
     "refine": "REPLACE"

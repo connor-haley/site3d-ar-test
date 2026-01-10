@@ -6,22 +6,6 @@ import { getTilesetOriginFromTransform, computeTilesetTransform, ecefToWgs84 } f
 
 let tilesRenderer = null;
 let tilesetOriginWgs84 = null;
-let dracoLoader = null;
-
-/**
- * Initialize DRACO loader (call once at startup)
- */
-function initDracoLoader() {
-  if (dracoLoader) return dracoLoader;
-  
-  dracoLoader = new DRACOLoader();
-  // Use Google's hosted DRACO decoder (works everywhere, no local files needed)
-  dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
-  dracoLoader.setDecoderConfig({ type: 'js' }); // Use JS decoder for maximum compatibility
-  
-  console.log('DRACO loader initialized');
-  return dracoLoader;
-}
 
 /**
  * Load a 3D Tiles tileset with DRACO support
@@ -30,8 +14,16 @@ export async function loadTileset(url, scene, camera) {
   return new Promise(async (resolve, reject) => {
     console.log('Loading tileset from:', url);
     
-    // Initialize DRACO
-    initDracoLoader();
+    // Setup DRACO loader
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    dracoLoader.setDecoderConfig({ type: 'js' });
+    console.log('DRACO loader initialized');
+    
+    // Setup GLTF loader with DRACO
+    const gltfLoader = new GLTFLoader();
+    gltfLoader.setDRACOLoader(dracoLoader);
+    console.log('GLTF loader configured with DRACO');
     
     // Fetch tileset.json directly to get the transform
     try {
@@ -48,45 +40,54 @@ export async function loadTileset(url, scene, camera) {
     
     tilesRenderer = new TilesRenderer(url);
     
-    // Configure the GLTFLoader used by TilesRenderer to use DRACO
-    tilesRenderer.manager.addHandler(/\.gltf$|\.glb$/i, {
-      load(url, onLoad, onProgress, onError, loader) {
-        const gltfLoader = new GLTFLoader(loader.manager);
-        gltfLoader.setDRACOLoader(dracoLoader);
-        gltfLoader.load(url, onLoad, onProgress, onError);
-      }
-    });
+    // Register the GLTF loader with DRACO support
+    // This is the correct API for 3d-tiles-renderer
+    tilesRenderer.manager.addHandler(/\.gltf$|\.glb$/i, gltfLoader);
+    console.log('Registered GLTF/GLB handler with DRACO');
     
     tilesRenderer.setCamera(camera);
     tilesRenderer.setResolutionFromRenderer(camera, window.renderer);
     
-    // Loading settings
-    tilesRenderer.errorTarget = 50;
+    // Loading settings - more aggressive for debugging
+    tilesRenderer.errorTarget = 100;
     tilesRenderer.maxDepth = 15;
     tilesRenderer.loadSiblings = true;
     
     // Disable frustum culling on the group
     tilesRenderer.group.frustumCulled = false;
     
-    // Event listeners
+    // Track what's happening
+    let loadedCount = 0;
+    
+    tilesRenderer.addEventListener('load-tile-set', (event) => {
+      console.log('EVENT: load-tile-set - tileset.json loaded');
+      console.log('Root children:', tilesRenderer.root?.children?.length);
+    });
+    
     tilesRenderer.addEventListener('load-content', (event) => {
-      console.log('Tile content loaded:', event.tile?.content?.uri);
+      loadedCount++;
+      const uri = event.tile?.content?.uri || 'unknown';
+      console.log(`EVENT: load-content #${loadedCount} - ${uri}`);
+      
+      // Check what got loaded
+      let meshCount = 0;
+      tilesRenderer.group.traverse(obj => {
+        if (obj.isMesh) meshCount++;
+      });
+      console.log(`Total meshes in group now: ${meshCount}`);
     });
     
     tilesRenderer.addEventListener('load-model', (event) => {
-      console.log('Model loaded');
-    });
-    
-    tilesRenderer.addEventListener('load-tile-set', (event) => {
-      console.log('Tileset loaded');
+      console.log('EVENT: load-model', event);
     });
     
     tilesRenderer.addEventListener('error', (event) => {
-      console.error('Tileset error:', event);
+      console.error('EVENT: error', event);
     });
     
     // Add to scene
     scene.add(tilesRenderer.group);
+    console.log('Tileset group added to scene');
     
     // Wait for initial load
     const checkLoaded = () => {
@@ -149,22 +150,36 @@ export function disposeTileset(scene) {
 }
 
 /**
- * Debug: get the tileset's internal transform
+ * Debug: get the tileset's internal state
  */
 export function debugTilesetTransform() {
-  if (!tilesRenderer || !tilesRenderer.root) {
-    console.log('Tileset not loaded yet');
+  if (!tilesRenderer) {
+    console.log('Tileset not created yet');
+    return;
+  }
+  
+  if (!tilesRenderer.root) {
+    console.log('Tileset root not loaded yet');
     return;
   }
   
   console.log('=== Tileset Transform Debug ===');
   console.log('Root transform:', tilesRenderer.root.transform?.elements);
   console.log('Group position:', tilesRenderer.group.position);
+  console.log('Group world position:', tilesRenderer.group.getWorldPosition(new THREE.Vector3()));
   console.log('Origin WGS84:', tilesetOriginWgs84);
   
   let meshCount = 0;
+  let totalVerts = 0;
   tilesRenderer.group.traverse((obj) => {
-    if (obj.isMesh) meshCount++;
+    if (obj.isMesh) {
+      meshCount++;
+      totalVerts += obj.geometry.attributes.position?.count || 0;
+    }
   });
   console.log('Meshes in group:', meshCount);
+  console.log('Total vertices:', totalVerts);
+  
+  // Log stats
+  console.log('Stats:', tilesRenderer.stats);
 }
